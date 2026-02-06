@@ -7,9 +7,12 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Progress } from "@/components/ui/progress";
+import { Badge } from "@/components/ui/badge";
 import { useApp } from "@/context/AppContext";
 import { AdminData } from "@/services/storage";
 import { mockApi } from "@/services/mockApi";
+import { backend } from "@/services/backend";
+import { BillUpload } from "@/components/forms/BillUpload";
 import { toast } from "@/hooks/use-toast";
 import {
   GraduationCap,
@@ -20,6 +23,9 @@ import {
   Zap,
   Check,
   Loader2,
+  Plus,
+  X,
+  Sparkles,
 } from "lucide-react";
 
 const adminTypes = [
@@ -77,6 +83,10 @@ export default function Setup() {
   const [billAmount, setBillAmount] = useState("");
   const [roomsBlocks, setRoomsBlocks] = useState("");
   const [selectedAppliances, setSelectedAppliances] = useState<string[]>([]);
+  const [customAppliances, setCustomAppliances] = useState<string[]>([]);
+  const [customApplianceInput, setCustomApplianceInput] = useState("");
+  const [billUploaded, setBillUploaded] = useState(false);
+  const [extractedFromBill, setExtractedFromBill] = useState(false);
   const [occupancyPattern, setOccupancyPattern] = useState<Record<string, boolean[]>>(() => {
     const pattern: Record<string, boolean[]> = {};
     days.forEach((day) => {
@@ -95,6 +105,32 @@ export default function Setup() {
     }));
   };
 
+  const handleBillExtract = (data: { consumption: number; billAmount: number }) => {
+    setConsumption(data.consumption.toString());
+    setBillAmount(data.billAmount.toString());
+    setBillUploaded(true);
+    setExtractedFromBill(true);
+    toast({
+      title: "Bill Analyzed",
+      description: "Consumption and bill amount extracted successfully!",
+    });
+  };
+
+  const addCustomAppliance = () => {
+    const trimmed = customApplianceInput.trim();
+    if (trimmed && !customAppliances.includes(trimmed)) {
+      setCustomAppliances([...customAppliances, trimmed]);
+      setCustomApplianceInput("");
+      backend.saveCustomAppliances([...customAppliances, trimmed]);
+    }
+  };
+
+  const removeCustomAppliance = (appliance: string) => {
+    const updated = customAppliances.filter((a) => a !== appliance);
+    setCustomAppliances(updated);
+    backend.saveCustomAppliances(updated);
+  };
+
   const handleSubmit = async () => {
     if (!selectedType) return;
 
@@ -106,12 +142,15 @@ export default function Setup() {
       lastBillAmount: parseFloat(billAmount) || 35000,
       roomsBlocks: parseInt(roomsBlocks) || 20,
       appliances: selectedAppliances,
+      customAppliances,
       occupancyPattern,
       createdAt: new Date().toISOString(),
+      billUploaded,
     };
 
     try {
       await mockApi.submitAdminData(adminData);
+      await backend.saveAdminData(adminData);
       setAdminData(adminData);
       completeOnboarding();
       
@@ -139,7 +178,7 @@ export default function Setup() {
       case 2:
         return consumption && billAmount && roomsBlocks;
       case 3:
-        return selectedAppliances.length > 0;
+        return selectedAppliances.length > 0 || customAppliances.length > 0;
       case 4:
         return true;
       default:
@@ -220,26 +259,62 @@ export default function Setup() {
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-6">
+                {/* Bill Upload */}
+                <BillUpload onExtract={handleBillExtract} />
+
+                <div className="relative">
+                  <div className="absolute inset-0 flex items-center">
+                    <span className="w-full border-t" />
+                  </div>
+                  <div className="relative flex justify-center text-xs uppercase">
+                    <span className="bg-card px-2 text-muted-foreground">
+                      Or enter manually
+                    </span>
+                  </div>
+                </div>
+
                 <div className="space-y-2">
-                  <Label htmlFor="consumption">Monthly Electricity Consumption (kWh)</Label>
+                  <div className="flex items-center gap-2">
+                    <Label htmlFor="consumption">Monthly Electricity Consumption (kWh)</Label>
+                    {extractedFromBill && (
+                      <Badge variant="outline" className="text-xs bg-primary/10 text-primary border-primary/30 gap-1">
+                        <Sparkles className="h-3 w-3" />
+                        From bill
+                      </Badge>
+                    )}
+                  </div>
                   <Input
                     id="consumption"
                     type="number"
                     placeholder="e.g., 5000"
                     value={consumption}
-                    onChange={(e) => setConsumption(e.target.value)}
+                    onChange={(e) => {
+                      setConsumption(e.target.value);
+                      setExtractedFromBill(false);
+                    }}
                     className="text-lg"
                   />
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="bill">Last Month's Bill Amount (₹)</Label>
+                  <div className="flex items-center gap-2">
+                    <Label htmlFor="bill">Last Month's Bill Amount (₹)</Label>
+                    {extractedFromBill && (
+                      <Badge variant="outline" className="text-xs bg-primary/10 text-primary border-primary/30 gap-1">
+                        <Sparkles className="h-3 w-3" />
+                        From bill
+                      </Badge>
+                    )}
+                  </div>
                   <Input
                     id="bill"
                     type="number"
                     placeholder="e.g., 35000"
                     value={billAmount}
-                    onChange={(e) => setBillAmount(e.target.value)}
+                    onChange={(e) => {
+                      setBillAmount(e.target.value);
+                      setExtractedFromBill(false);
+                    }}
                     className="text-lg"
                   />
                 </div>
@@ -268,7 +343,7 @@ export default function Setup() {
                   Select the major energy consumers in your property
                 </CardDescription>
               </CardHeader>
-              <CardContent>
+              <CardContent className="space-y-6">
                 <div className="grid grid-cols-2 gap-4">
                   {appliances.map((appliance) => (
                     <label
@@ -292,6 +367,52 @@ export default function Setup() {
                       <span className="font-medium">{appliance.label}</span>
                     </label>
                   ))}
+                </div>
+
+                {/* Custom Appliances */}
+                <div className="space-y-4 pt-4 border-t">
+                  <Label className="text-base font-medium">Add Custom Equipment</Label>
+                  <div className="flex gap-2">
+                    <Input
+                      placeholder="e.g., Server Room AC, EV Chargers"
+                      value={customApplianceInput}
+                      onChange={(e) => setCustomApplianceInput(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                          e.preventDefault();
+                          addCustomAppliance();
+                        }
+                      }}
+                    />
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={addCustomAppliance}
+                      disabled={!customApplianceInput.trim()}
+                    >
+                      <Plus className="h-4 w-4" />
+                    </Button>
+                  </div>
+
+                  {customAppliances.length > 0 && (
+                    <div className="flex flex-wrap gap-2">
+                      {customAppliances.map((appliance) => (
+                        <Badge
+                          key={appliance}
+                          variant="secondary"
+                          className="pl-3 pr-1 py-1.5 text-sm gap-1"
+                        >
+                          {appliance}
+                          <button
+                            onClick={() => removeCustomAppliance(appliance)}
+                            className="ml-1 p-0.5 rounded-full hover:bg-destructive/20 transition-colors"
+                          >
+                            <X className="h-3 w-3" />
+                          </button>
+                        </Badge>
+                      ))}
+                    </div>
+                  )}
                 </div>
               </CardContent>
             </Card>

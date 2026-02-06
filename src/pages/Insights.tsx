@@ -6,6 +6,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { mockApi, StateData, AggregatedInsight } from "@/services/mockApi";
+import { downloadCSV } from "@/services/exportUtils";
 import {
   BarChart,
   Bar,
@@ -18,13 +19,14 @@ import {
 } from "recharts";
 import {
   Map,
-  BarChart3,
   TrendingUp,
   Building2,
   GraduationCap,
   Home,
   Download,
   AlertTriangle,
+  Loader2,
+  CheckCircle2,
 } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 
@@ -39,6 +41,7 @@ export default function Insights() {
   const [insights, setInsights] = useState<AggregatedInsight[]>([]);
   const [wastageCauses, setWastageCauses] = useState<{ cause: string; percentage: number }[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [isExporting, setIsExporting] = useState(false);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -56,18 +59,43 @@ export default function Insights() {
     fetchData();
   }, []);
 
-  const handleExport = () => {
+  const handleExport = async () => {
+    setIsExporting(true);
+    
     toast({
-      title: "Export Started",
-      description: "Your insights report is being generated...",
+      title: "Generating Report",
+      description: "Preparing your insights report...",
     });
-    // Mock export functionality
-    setTimeout(() => {
-      toast({
-        title: "Export Complete",
-        description: "Report downloaded successfully.",
+
+    // Small delay for UX
+    await new Promise((resolve) => setTimeout(resolve, 1500));
+
+    try {
+      downloadCSV({
+        stateData,
+        insights,
+        wastageCauses,
+        generatedAt: new Date().toISOString(),
       });
-    }, 2000);
+
+      toast({
+        title: "Download Complete",
+        description: (
+          <div className="flex items-center gap-2">
+            <CheckCircle2 className="h-4 w-4 text-primary" />
+            <span>UrbanSave_Insights_Report.csv downloaded successfully</span>
+          </div>
+        ),
+      });
+    } catch (error) {
+      toast({
+        title: "Export Failed",
+        description: "Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsExporting(false);
+    }
   };
 
   const formatCurrency = (amount: number) =>
@@ -90,9 +118,23 @@ export default function Insights() {
               Aggregated data and trends across all UrbanSave AI users
             </p>
           </div>
-          <Button onClick={handleExport} variant="outline" className="gap-2">
-            <Download className="h-4 w-4" />
-            Export Report
+          <Button 
+            onClick={handleExport} 
+            variant="outline" 
+            className="gap-2"
+            disabled={isExporting || isLoading}
+          >
+            {isExporting ? (
+              <>
+                <Loader2 className="h-4 w-4 animate-spin" />
+                Exporting...
+              </>
+            ) : (
+              <>
+                <Download className="h-4 w-4" />
+                Export Report
+              </>
+            )}
           </Button>
         </div>
 

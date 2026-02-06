@@ -3,6 +3,7 @@
 
 import type { AdminData, UserPreferences, FeedbackData } from "./storage";
 import { calculations } from "./calculations";
+import { backend } from "./backend";
 
 // Simulated API delay
 const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -29,6 +30,8 @@ export const mockApi = {
   // Submit admin setup data
   submitAdminData: async (data: AdminData): Promise<{ success: boolean; id: string }> => {
     await delay(800);
+    // Also save to backend service
+    await backend.saveAdminData(data);
     return {
       success: true,
       id: `admin_${Date.now()}`,
@@ -41,15 +44,21 @@ export const mockApi = {
     return calculations.predictConsumption(adminData, preferences);
   },
 
-  // Get recommendations
-  getRecommendations: async (adminData: AdminData, preferences: UserPreferences) => {
+  // Get recommendations with feedback-based adaptation
+  getRecommendations: async (
+    adminData: AdminData,
+    preferences: UserPreferences,
+    feedbackData?: { appliedIds: string[]; skippedIds: string[] }
+  ) => {
     await delay(600);
-    return calculations.generateRecommendations(adminData, preferences);
+    return calculations.generateRecommendations(adminData, preferences, feedbackData);
   },
 
   // Submit feedback
   submitFeedback: async (feedback: FeedbackData): Promise<{ success: boolean }> => {
     await delay(400);
+    // Also save to backend service
+    await backend.saveFeedback(feedback);
     return { success: true };
   },
 

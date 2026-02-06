@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Header } from "@/components/layout/Header";
 import { SavingsBanner } from "@/components/dashboard/SavingsBanner";
+import { LearningIndicator } from "@/components/notifications/LearningIndicator";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Slider } from "@/components/ui/slider";
@@ -9,8 +10,11 @@ import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useApp } from "@/context/AppContext";
 import { mockApi } from "@/services/mockApi";
+import { storage } from "@/services/storage";
+import { backend } from "@/services/backend";
 import { calculations, Recommendation } from "@/services/calculations";
 import { FeedbackPopup } from "@/components/notifications/FeedbackPopup";
+import { toast } from "@/hooks/use-toast";
 import {
   Lightbulb,
   Zap,
@@ -20,6 +24,8 @@ import {
   ArrowRight,
   IndianRupee,
   Leaf,
+  CheckCircle2,
+  XCircle,
 } from "lucide-react";
 
 const priorityColors = {
@@ -36,7 +42,7 @@ const categoryIcons = {
 
 export default function Recommendations() {
   const navigate = useNavigate();
-  const { adminData, preferences, updatePreferences, isOnboardingComplete, isLoading } = useApp();
+  const { adminData, preferences, updatePreferences, feedback, isOnboardingComplete, isLoading } = useApp();
   const [recommendations, setRecommendations] = useState<Recommendation[]>([]);
   const [isLoadingData, setIsLoadingData] = useState(true);
   const [autoOffMinutes, setAutoOffMinutes] = useState(preferences.autoOffMinutes);
@@ -48,6 +54,10 @@ export default function Recommendations() {
   } | null>(null);
   const [showFeedback, setShowFeedback] = useState(false);
   const [currentRecommendation, setCurrentRecommendation] = useState<Recommendation | null>(null);
+  const [feedbackStats, setFeedbackStats] = useState<{
+    appliedIds: string[];
+    skippedIds: string[];
+  }>({ appliedIds: [], skippedIds: [] });
 
   useEffect(() => {
     if (!isLoading && !isOnboardingComplete) {
@@ -58,21 +68,35 @@ export default function Recommendations() {
     if (adminData) {
       const fetchData = async () => {
         setIsLoadingData(true);
-        const data = await mockApi.getRecommendations(adminData, preferences);
+        
+        // Get feedback stats for adaptive recommendations
+        const stats = storage.getFeedbackStats();
+        setFeedbackStats({ appliedIds: stats.appliedIds, skippedIds: stats.skippedIds });
+        
+        const data = await mockApi.getRecommendations(adminData, preferences, {
+          appliedIds: stats.appliedIds,
+          skippedIds: stats.skippedIds,
+        });
         setRecommendations(data);
         setIsLoadingData(false);
 
         // Show feedback popup for first recommendation after 3 seconds
         setTimeout(() => {
           if (data.length > 0) {
-            setCurrentRecommendation(data[0]);
-            setShowFeedback(true);
+            // Pick a recommendation that hasn't been rated recently
+            const unreviewedRec = data.find(
+              (r) => !stats.appliedIds.includes(r.id) && !stats.skippedIds.includes(r.id)
+            );
+            if (unreviewedRec) {
+              setCurrentRecommendation(unreviewedRec);
+              setShowFeedback(true);
+            }
           }
         }, 3000);
       };
       fetchData();
     }
-  }, [adminData, preferences, isOnboardingComplete, isLoading, navigate]);
+  }, [adminData, preferences, isOnboardingComplete, isLoading, navigate, feedback]);
 
   useEffect(() => {
     if (adminData) {
@@ -81,11 +105,28 @@ export default function Recommendations() {
     }
   }, [adminData, autoOffMinutes, acReduction]);
 
-  const applySettings = () => {
+  const applySettings = async () => {
     updatePreferences({
       autoOffMinutes,
       acReductionPercent: acReduction,
     });
+    
+    await backend.savePreferences({
+      ...preferences,
+      autoOffMinutes,
+      acReductionPercent: acReduction,
+    });
+    
+    toast({
+      title: "Settings Applied!",
+      description: "Your dashboard will update with new predictions.",
+    });
+  };
+
+  const getRecommendationStatus = (recId: string) => {
+    if (feedbackStats.appliedIds.includes(recId)) return "applied";
+    if (feedbackStats.skippedIds.includes(recId)) return "skipped";
+    return null;
   };
 
   if (isLoading || !adminData) {
@@ -103,6 +144,7 @@ export default function Recommendations() {
     <div className="min-h-screen flex flex-col bg-background">
       <Header />
       <SavingsBanner />
+      <LearningIndicator />
 
       <main className="flex-1 container py-8">
         <div className="mb-8">
@@ -130,10 +172,18 @@ export default function Recommendations() {
               <div className="space-y-4">
                 {recommendations.map((rec, index) => {
                   const CategoryIcon = categoryIcons[rec.category];
+                  const status = getRecommendationStatus(rec.id);
+                  
                   return (
                     <Card
                       key={rec.id}
-                      className="animate-fade-in-up hover:shadow-lg transition-shadow"
+                      className={`animate-fade-in-up hover:shadow-lg transition-shadow ${
+                        status === "applied"
+                          ? "border-primary/30 bg-primary/5"
+                          : status === "skipped"
+                          ? "opacity-70"
+                          : ""
+                      }`}
                       style={{ animationDelay: `${index * 100}ms` }}
                     >
                       <CardContent className="p-6">
@@ -143,7 +193,7 @@ export default function Recommendations() {
                               <CategoryIcon className="h-5 w-5 text-primary" />
                             </div>
                             <div className="flex-1">
-                              <div className="flex items-center gap-2 mb-1">
+                              <div className="flex items-center gap-2 mb-1 flex-wrap">
                                 <h3 className="font-semibold">{rec.title}</h3>
                                 <Badge
                                   variant="outline"
@@ -151,6 +201,24 @@ export default function Recommendations() {
                                 >
                                   {rec.priority}
                                 </Badge>
+                                {status === "applied" && (
+                                  <Badge
+                                    variant="outline"
+                                    className="bg-primary/10 text-primary border-primary/30 gap-1"
+                                  >
+                                    <CheckCircle2 className="h-3 w-3" />
+                                    Applied
+                                  </Badge>
+                                )}
+                                {status === "skipped" && (
+                                  <Badge
+                                    variant="outline"
+                                    className="bg-muted text-muted-foreground gap-1"
+                                  >
+                                    <XCircle className="h-3 w-3" />
+                                    Skipped
+                                  </Badge>
+                                )}
                               </div>
                               <p className="text-sm text-muted-foreground mb-3">
                                 {rec.description}
@@ -169,14 +237,14 @@ export default function Recommendations() {
                           </div>
                           <Button
                             size="sm"
-                            variant="outline"
-                            className="flex-shrink-0"
+                            variant={status ? "outline" : "default"}
+                            className={`flex-shrink-0 ${!status ? "gradient-primary border-0" : ""}`}
                             onClick={() => {
                               setCurrentRecommendation(rec);
                               setShowFeedback(true);
                             }}
                           >
-                            Apply
+                            {status ? "Review" : "Apply"}
                             <ArrowRight className="h-3 w-3 ml-1" />
                           </Button>
                         </div>

@@ -5,6 +5,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { ThemeProvider } from "next-themes";
 import { AppProvider } from "@/context/AppContext";
+import { DebugPanel } from "@/components/debug/DebugPanel";
 import Landing from "./pages/Landing";
 import Setup from "./pages/Setup";
 import Dashboard from "./pages/Dashboard";
@@ -31,6 +32,7 @@ const App = () => (
               <Route path="*" element={<NotFound />} />
             </Routes>
           </BrowserRouter>
+          <DebugPanel />
         </TooltipProvider>
       </AppProvider>
     </ThemeProvider>
