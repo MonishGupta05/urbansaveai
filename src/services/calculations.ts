@@ -141,10 +141,11 @@ export const calculations = {
     return zones.sort((a, b) => b.percentage - a.percentage);
   },
 
-  // Generate AI recommendations based on data
+  // Generate AI recommendations based on data and feedback history
   generateRecommendations: (
     adminData: AdminData,
-    preferences: UserPreferences
+    preferences: UserPreferences,
+    feedbackData?: { appliedIds: string[]; skippedIds: string[] }
   ): Recommendation[] => {
     const recommendations: Recommendation[] = [];
 
@@ -221,9 +222,23 @@ export const calculations = {
       category: "scheduling",
     });
 
+    // Sort by priority with feedback-based adjustments
     return recommendations.sort((a, b) => {
       const priorityOrder = { high: 0, medium: 1, low: 2 };
-      return priorityOrder[a.priority] - priorityOrder[b.priority];
+      let aScore = priorityOrder[a.priority];
+      let bScore = priorityOrder[b.priority];
+
+      // Boost priority for previously applied recommendations
+      if (feedbackData?.appliedIds.includes(a.id)) aScore -= 0.5;
+      if (feedbackData?.appliedIds.includes(b.id)) bScore -= 0.5;
+
+      // Lower priority for repeatedly skipped recommendations
+      const aSkipCount = feedbackData?.skippedIds.filter((id) => id === a.id).length || 0;
+      const bSkipCount = feedbackData?.skippedIds.filter((id) => id === b.id).length || 0;
+      aScore += aSkipCount * 0.3;
+      bScore += bSkipCount * 0.3;
+
+      return aScore - bScore;
     });
   },
 

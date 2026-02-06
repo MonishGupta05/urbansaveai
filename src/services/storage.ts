@@ -7,8 +7,10 @@ export interface AdminData {
   lastBillAmount: number;
   roomsBlocks: number;
   appliances: string[];
+  customAppliances: string[];
   occupancyPattern: Record<string, boolean[]>;
   createdAt: string;
+  billUploaded?: boolean;
 }
 
 export interface UserPreferences {
@@ -67,6 +69,20 @@ export const storage = {
     const existing = storage.getFeedback();
     existing.push(feedback);
     localStorage.setItem(KEYS.FEEDBACK, JSON.stringify(existing));
+  },
+
+  // Get feedback statistics for adaptive learning
+  getFeedbackStats: (): { total: number; applied: number; skipped: number; appliedIds: string[]; skippedIds: string[] } => {
+    const feedback = storage.getFeedback();
+    const applied = feedback.filter((f) => f.applied);
+    const skipped = feedback.filter((f) => !f.applied);
+    return {
+      total: feedback.length,
+      applied: applied.length,
+      skipped: skipped.length,
+      appliedIds: applied.map((f) => f.recommendationId),
+      skippedIds: skipped.map((f) => f.recommendationId),
+    };
   },
 
   // Onboarding status

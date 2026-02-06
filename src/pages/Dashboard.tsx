@@ -5,9 +5,11 @@ import { SavingsBanner } from "@/components/dashboard/SavingsBanner";
 import { ModeSelector } from "@/components/forms/ModeSelector";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Badge } from "@/components/ui/badge";
 import { useApp } from "@/context/AppContext";
 import { mockApi } from "@/services/mockApi";
-import { PredictionResult, WastageZone } from "@/services/calculations";
+import { PredictionResult } from "@/services/calculations";
+import { getAdminConfig, getContextLabels } from "@/config/adminTypeConfig";
 import {
   PieChart,
   Pie,
@@ -18,7 +20,6 @@ import {
   YAxis,
   Tooltip,
   ResponsiveContainer,
-  Legend,
 } from "recharts";
 import {
   TrendingUp,
@@ -27,6 +28,7 @@ import {
   IndianRupee,
   Leaf,
   AlertTriangle,
+  Sparkles,
 } from "lucide-react";
 
 const CHART_COLORS = [
@@ -42,6 +44,12 @@ export default function Dashboard() {
   const { adminData, preferences, isOnboardingComplete, isLoading } = useApp();
   const [dashboardData, setDashboardData] = useState<PredictionResult | null>(null);
   const [isLoadingData, setIsLoadingData] = useState(true);
+  const [isUpdating, setIsUpdating] = useState(false);
+  const [prevPreferences, setPrevPreferences] = useState(preferences);
+
+  // Get admin-type-specific config
+  const adminConfig = adminData ? getAdminConfig(adminData.type) : null;
+  const contextLabels = adminData ? getContextLabels(adminData.type) : null;
 
   useEffect(() => {
     if (!isLoading && !isOnboardingComplete) {
@@ -51,10 +59,18 @@ export default function Dashboard() {
 
     if (adminData) {
       const fetchData = async () => {
-        setIsLoadingData(true);
+        // Show updating animation if preferences changed
+        if (JSON.stringify(preferences) !== JSON.stringify(prevPreferences)) {
+          setIsUpdating(true);
+        } else {
+          setIsLoadingData(true);
+        }
+        
         const data = await mockApi.getDashboardData(adminData, preferences);
         setDashboardData(data);
         setIsLoadingData(false);
+        setIsUpdating(false);
+        setPrevPreferences(preferences);
       };
       fetchData();
     }
@@ -78,11 +94,27 @@ export default function Dashboard() {
       maximumFractionDigits: 0,
     }).format(amount);
 
-  const consumptionData = dashboardData?.wastageZones.map((zone) => ({
+  // Use admin-type-specific wastage zones if available
+  const wastageZones = adminConfig
+    ? adminConfig.wastageZones.map((zone, index) => ({
+        name: zone.label,
+        percentage: Math.round(
+          zone.defaultPercentage + (Math.random() - 0.5) * 10
+        ),
+        kWh: Math.round(
+          (adminData.monthlyConsumption * zone.defaultPercentage) / 100
+        ),
+      }))
+    : dashboardData?.wastageZones || [];
+
+  const consumptionData = wastageZones.map((zone) => ({
     name: zone.name,
     value: zone.percentage,
     kWh: zone.kWh,
-  })) || [];
+  }));
+
+  // Get admin-type-specific icon
+  const TypeIcon = adminConfig?.icon || Zap;
 
   return (
     <div className="min-h-screen flex flex-col bg-background">
@@ -91,16 +123,46 @@ export default function Dashboard() {
 
       <main className="flex-1 container py-8">
         <div className="mb-8">
-          <h1 className="text-3xl font-bold mb-2">Energy Dashboard</h1>
-          <p className="text-muted-foreground">
-            Real-time insights for your {adminData.type} • Last updated just now
-          </p>
+          <div className="flex items-center gap-3 mb-2">
+            <div
+              className="w-10 h-10 rounded-lg gradient-primary flex items-center justify-center"
+              style={{
+                background: adminConfig
+                  ? `linear-gradient(135deg, ${adminConfig.primaryColor}, hsl(${adminConfig.accentHue}, 62%, 55%))`
+                  : undefined,
+              }}
+            >
+              <TypeIcon className="h-5 w-5 text-primary-foreground" />
+            </div>
+            <div>
+              <h1 className="text-3xl font-bold">
+                {contextLabels?.typeLabel} Energy Dashboard
+              </h1>
+              <p className="text-muted-foreground">
+                {contextLabels?.description} •{" "}
+                {contextLabels?.unitCount(adminData.roomsBlocks)} managed
+              </p>
+            </div>
+          </div>
+          {isUpdating && (
+            <Badge
+              variant="outline"
+              className="mt-2 gap-1 animate-pulse bg-primary/10 text-primary border-primary/30"
+            >
+              <Sparkles className="h-3 w-3" />
+              Updating predictions...
+            </Badge>
+          )}
         </div>
 
         {/* Stats Grid */}
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4 mb-8">
           {/* Predicted Bill */}
-          <Card className="relative overflow-hidden">
+          <Card
+            className={`relative overflow-hidden transition-all duration-300 ${
+              isUpdating ? "opacity-70" : ""
+            }`}
+          >
             <CardHeader className="flex flex-row items-center justify-between pb-2">
               <CardTitle className="text-sm font-medium text-muted-foreground">
                 Predicted Next Bill
@@ -112,7 +174,11 @@ export default function Dashboard() {
                 <Skeleton className="h-8 w-24" />
               ) : (
                 <>
-                  <div className="text-2xl font-bold">
+                  <div
+                    className={`text-2xl font-bold transition-all duration-500 ${
+                      isUpdating ? "blur-sm" : ""
+                    }`}
+                  >
                     {formatCurrency(dashboardData?.predictedBill || 0)}
                   </div>
                   <p className="text-xs text-muted-foreground flex items-center gap-1 mt-1">
@@ -126,7 +192,11 @@ export default function Dashboard() {
           </Card>
 
           {/* Savings Estimate */}
-          <Card className="relative overflow-hidden">
+          <Card
+            className={`relative overflow-hidden transition-all duration-300 ${
+              isUpdating ? "opacity-70" : ""
+            }`}
+          >
             <CardHeader className="flex flex-row items-center justify-between pb-2">
               <CardTitle className="text-sm font-medium text-muted-foreground">
                 Estimated Savings
@@ -138,7 +208,11 @@ export default function Dashboard() {
                 <Skeleton className="h-8 w-24" />
               ) : (
                 <>
-                  <div className="text-2xl font-bold text-primary">
+                  <div
+                    className={`text-2xl font-bold text-primary transition-all duration-500 ${
+                      isUpdating ? "blur-sm" : ""
+                    }`}
+                  >
                     {formatCurrency(dashboardData?.savingsEstimate || 0)}
                   </div>
                   <p className="text-xs text-muted-foreground mt-1">
@@ -150,11 +224,15 @@ export default function Dashboard() {
             <div className="absolute top-0 right-0 w-20 h-20 bg-primary/5 rounded-bl-full" />
           </Card>
 
-          {/* Energy Usage */}
-          <Card className="relative overflow-hidden">
+          {/* Energy Usage - Context Aware */}
+          <Card
+            className={`relative overflow-hidden transition-all duration-300 ${
+              isUpdating ? "opacity-70" : ""
+            }`}
+          >
             <CardHeader className="flex flex-row items-center justify-between pb-2">
               <CardTitle className="text-sm font-medium text-muted-foreground">
-                Predicted Consumption
+                {adminConfig?.kpis.primaryStat || "Predicted Consumption"}
               </CardTitle>
               <Zap className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
@@ -163,7 +241,11 @@ export default function Dashboard() {
                 <Skeleton className="h-8 w-24" />
               ) : (
                 <>
-                  <div className="text-2xl font-bold">
+                  <div
+                    className={`text-2xl font-bold transition-all duration-500 ${
+                      isUpdating ? "blur-sm" : ""
+                    }`}
+                  >
                     {dashboardData?.predictedConsumption.toLocaleString()} kWh
                   </div>
                   <p className="text-xs text-muted-foreground mt-1">
@@ -176,7 +258,11 @@ export default function Dashboard() {
           </Card>
 
           {/* CO2 Reduction */}
-          <Card className="relative overflow-hidden">
+          <Card
+            className={`relative overflow-hidden transition-all duration-300 ${
+              isUpdating ? "opacity-70" : ""
+            }`}
+          >
             <CardHeader className="flex flex-row items-center justify-between pb-2">
               <CardTitle className="text-sm font-medium text-muted-foreground">
                 CO₂ Reduction
@@ -188,11 +274,16 @@ export default function Dashboard() {
                 <Skeleton className="h-8 w-24" />
               ) : (
                 <>
-                  <div className="text-2xl font-bold text-eco">
+                  <div
+                    className={`text-2xl font-bold text-eco transition-all duration-500 ${
+                      isUpdating ? "blur-sm" : ""
+                    }`}
+                  >
                     {dashboardData?.co2Reduction.toFixed(0)} kg
                   </div>
                   <p className="text-xs text-muted-foreground mt-1">
-                    Equivalent to planting {Math.round((dashboardData?.co2Reduction || 0) / 20)} trees
+                    Equivalent to planting{" "}
+                    {Math.round((dashboardData?.co2Reduction || 0) / 20)} trees
                   </p>
                 </>
               )}
@@ -206,8 +297,12 @@ export default function Dashboard() {
           {/* Consumption Breakdown */}
           <Card>
             <CardHeader>
-              <CardTitle>Consumption Breakdown</CardTitle>
-              <CardDescription>Energy distribution by category</CardDescription>
+              <CardTitle>
+                {contextLabels?.typeLabel} Consumption Breakdown
+              </CardTitle>
+              <CardDescription>
+                Energy distribution by {contextLabels?.unitLabel} category
+              </CardDescription>
             </CardHeader>
             <CardContent>
               {isLoadingData ? (
@@ -225,7 +320,7 @@ export default function Dashboard() {
                       outerRadius={100}
                       paddingAngle={2}
                       dataKey="value"
-                      label={({ name, value }) => `${name}: ${value}%`}
+                      label={({ name, value }) => `${name.split(" ")[0]}: ${value}%`}
                       labelLine={false}
                     >
                       {consumptionData.map((_, index) => (
@@ -247,14 +342,18 @@ export default function Dashboard() {
             </CardContent>
           </Card>
 
-          {/* Wastage Zones */}
+          {/* Wastage Zones - Context Aware */}
           <Card>
             <CardHeader>
               <div className="flex items-center gap-2">
                 <AlertTriangle className="h-5 w-5 text-accent" />
-                <CardTitle>Wastage Zones</CardTitle>
+                <CardTitle>
+                  {adminConfig?.kpis.wasteIndicator || "Wastage Zones"}
+                </CardTitle>
               </div>
-              <CardDescription>Areas with highest savings potential</CardDescription>
+              <CardDescription>
+                {contextLabels?.typeLabel} areas with highest savings potential
+              </CardDescription>
             </CardHeader>
             <CardContent>
               {isLoadingData ? (
@@ -265,16 +364,15 @@ export default function Dashboard() {
                 </div>
               ) : (
                 <ResponsiveContainer width="100%" height={280}>
-                  <BarChart
-                    data={dashboardData?.wastageZones}
-                    layout="vertical"
-                    margin={{ left: 20 }}
-                  >
+                  <BarChart data={wastageZones} layout="vertical" margin={{ left: 20 }}>
                     <XAxis type="number" domain={[0, 50]} unit="%" />
-                    <YAxis type="category" dataKey="name" width={100} />
-                    <Tooltip
-                      formatter={(value: number) => [`${value}%`, "Wastage"]}
+                    <YAxis
+                      type="category"
+                      dataKey="name"
+                      width={120}
+                      tick={{ fontSize: 11 }}
                     />
+                    <Tooltip formatter={(value: number) => [`${value}%`, "Wastage"]} />
                     <Bar
                       dataKey="percentage"
                       fill="hsl(45, 93%, 58%)"
